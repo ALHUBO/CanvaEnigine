@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Document</title>
+		<style>
+			body {
+				background-color: #fff;
+			}
+		</style>
+	</head>
+	<body>
+		<div>titulo</div>
+		<canvas id="myCanvas" width="800" height="800"></canvas>
+	</body>
+	<script>
+		// Obtener el contexto del lienzo
+		var canvas = document.getElementById("myCanvas");
+		var ctx = canvas.getContext("2d");
+
+		var circles = {};
+		var conections = {};
+
+		var drag = -1;
+
+		// Dibujar el círculo en la posición inicial
+
+		var c1 = createCircle(200, 200, 25, "#8cd300");
+		var c2 = createCircle(600, 600, 25, "#00ad9d");
+		createConection(c1, c2);
+
+		c1 = createCircle(600, 200, 25, "#8cd300");
+		c2 = createCircle(200, 600, 25, "#00ad9d");
+		createConection(c1, c2);
+
+		window.addEventListener("resize", function () {
+			var width = document.documentElement.clientWidth;
+			var height = document.documentElement.clientHeight;
+			redimensiona(Math.ceil(width * 0.9), Math.ceil(height * 0.85));
+		});
+		function redimensiona(w, h) {
+			document.querySelector("#myCanvas").width = w;
+			document.querySelector("#myCanvas").height = h;
+		}
+		function createConection(n1, n2) {
+			let n = Object.keys(conections).length;
+			conections[n] = {
+				n1,
+				n2,
+			};
+			return n;
+		}
+
+		function drawConection(p1, p2) {
+			// Define los puntos de inicio y fin de la curva
+			let start_x = p1.x,
+				start_y = p1.y,
+				end_x = p2.x,
+				end_y = p2.y;
+			// Definir puntos de control para crear la curva de Bezier
+
+			let distance = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+			let abs = Math.abs(p1.y - p2.y);
+			if (distance > 80 && abs > 25) {
+				let control_x1, control_y1, control_x2, control_y2;
+				control_y1 = p1.y;
+				control_y2 = p2.y;
+				if (p1.x < p2.x) {
+					control_x1 = p1.x + 200;
+					control_x2 = p2.x - 200;
+				} else {
+					control_x1 = p1.x - 200;
+					control_x2 = p2.x + 200;
+				}
+				// Número de segmentos para la curva
+				let num_segments = 32,
+					// Define el ancho de la línea
+					line_width = 3, // Ajusta según sea necesario
+					// Dibuja la curva de Bezier utilizando primitivas
+					prev_x = p1.x,
+					prev_y = p1.y;
+				drawCircle(prev_x, prev_y, 4, "#757575", false);
+				ctx.beginPath();
+				ctx.moveTo(prev_x, prev_y);
+				ctx.lineWidth = 4;
+				ctx.strokeStyle = "#757575";
+				ctx.shadowBlur = 10; // Radio del desenfoque de la sombra
+				ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; // Color de la sombra (en este caso, semitransparente negro)
+				ctx.shadowOffsetX = 4; // Desplazamiento horizontal de la sombra
+				ctx.shadowOffsetY = 4;
+				let _x = 0,
+					_y = 0;
+				for (let i = 0; i <= num_segments; i++) {
+					let t = i / num_segments;
+					let inv_t = 1 - t;
+					_x =
+						start_x * inv_t * inv_t * inv_t +
+						3 * control_x1 * t * inv_t * inv_t +
+						3 * control_x2 * t * t * inv_t +
+						end_x * t * t * t;
+					_y =
+						start_y * inv_t * inv_t * inv_t +
+						3 * control_y1 * t * inv_t * inv_t +
+						3 * control_y2 * t * t * inv_t +
+						end_y * t * t * t;
+
+					prev_x = _x;
+					prev_y = _y;
+					ctx.lineTo(_x, _y);
+					//drawCircle(_x, _y, 10, "red");
+				}
+				//ctx.fillStyle = "blue"; // Color de los puntos
+				ctx.stroke(); // Dibujar los puntos
+				ctx.closePath();
+				drawCircle(_x, _y, 4, "#757575", false);
+			} else {
+				drawCircle(start_x, start_y, 4, "#757575", false);
+				ctx.beginPath();
+				ctx.moveTo(start_x, start_y);
+				ctx.lineWidth = 4;
+				ctx.strokeStyle = "#757575";
+				ctx.shadowBlur = 10; // Radio del desenfoque de la sombra
+				ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; // Color de la sombra (en este caso, semitransparente negro)
+				ctx.shadowOffsetX = 4; // Desplazamiento horizontal de la sombra
+				ctx.shadowOffsetY = 4;
+				ctx.lineTo(end_x, end_y);
+				ctx.stroke(); // Dibujar los puntos
+				ctx.closePath();
+				drawCircle(end_x, end_y, 4, "#757575", false);
+			}
+		}
+		function createCircle(x, y, r, c) {
+			let n = Object.keys(circles).length;
+			circles[n] = {
+				x,
+				y,
+				r,
+				c,
+			};
+			return n;
+		}
+
+		function drawAll() {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			var gradient = ctx.createLinearGradient(
+				0,
+				canvas.width,
+				canvas.height,
+				0
+			);
+			gradient.addColorStop(0, "#69a100"); // Color inicial (en la esquina superior izquierda)
+			gradient.addColorStop(1, "#1c2b00");
+			ctx.fillStyle = gradient;
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			for (let i = 0; i < canvas.width; i += 32) {
+				ctx.beginPath();
+				ctx.moveTo(i, 0);
+				ctx.lineWidth = 1;
+				ctx.strokeStyle = "#efefef";
+				ctx.lineTo(i, canvas.height);
+				ctx.stroke(); // Dibujar los puntos
+				ctx.closePath();
+			}
+
+			for (let i = 0; i < canvas.width; i += 32) {
+				ctx.beginPath();
+				ctx.moveTo(0, i);
+				ctx.lineWidth = 1;
+				ctx.strokeStyle = "#efefef";
+				ctx.lineTo(canvas.width, i);
+				ctx.stroke(); // Dibujar los puntos
+				ctx.closePath();
+			}
+			for (let i in circles) {
+				drawCircle(
+					circles[i].x,
+					circles[i].y,
+					circles[i].r,
+					circles[i].c,
+					true
+				);
+			}
+
+			for (let i in conections) {
+				let id1 = conections[i].n1;
+				let id2 = conections[i].n2;
+				drawConection(
+					{ x: circles[id1].x, y: circles[id1].y },
+					{ x: circles[id2].x, y: circles[id2].y }
+				);
+			}
+		}
+		// Función para dibujar el círculo
+		function drawCircle(x, y, r, c, b) {
+			ctx.beginPath();
+			ctx.arc(x, y, r, 0, Math.PI * 2);
+			ctx.fillStyle = c;
+			if (b) {
+				ctx.shadowBlur = 10; // Radio del desenfoque de la sombra
+				ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; // Color de la sombra (en este caso, semitransparente negro)
+				ctx.shadowOffsetX = 5; // Desplazamiento horizontal de la sombra
+				ctx.shadowOffsetY = 5;
+			} else {
+				ctx.shadowBlur = 0; // Radio del desenfoque de la sombra
+				ctx.shadowColor = "rgba(0, 0, 0, 0)"; // Color de la sombra (en este caso, semitransparente negro)
+				ctx.shadowOffsetX = 0; // Desplazamiento horizontal de la sombra
+				ctx.shadowOffsetY = 0;
+			}
+			ctx.fill();
+			ctx.closePath();
+		}
+
+		// Función para detectar el clic en el círculo
+		function isInsideCircle(mouseX, mouseY) {
+			for (let i in circles) {
+				if (
+					Math.sqrt(
+						(mouseX - circles[i].x) ** 2 +
+							(mouseY - circles[i].y) ** 2
+					) < circles[i].r
+				) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		// Evento de clic del mouse
+		canvas.addEventListener("mousedown", function (e) {
+			var mouseX = e.clientX - canvas.offsetLeft;
+			var mouseY = e.clientY - canvas.offsetTop;
+
+			drag = isInsideCircle(mouseX, mouseY);
+		});
+
+		// Evento de movimiento del mouse
+		canvas.addEventListener("mousemove", function (e) {
+			if (drag >= 0) {
+				circles[drag].x = e.clientX - canvas.offsetLeft;
+				circles[drag].y = e.clientY - canvas.offsetTop;
+			}
+		});
+
+		// Evento de liberación del mouse
+		canvas.addEventListener("mouseup", function () {
+			drag = -1;
+		});
+
+		var animate = createCircle(10, 10, 10, "red");
+		var fps = 60;
+		var spf = 0;
+		setfps(fps);
+		function setfps(fsp) {
+			fps = fsp;
+			spf = 1000 / fps;
+		}
+		function main() {
+			circles[animate].x += 2;
+			circles[animate].y += 2;
+			if (circles[animate].x + circles[animate].r > canvas.width)
+				circles[animate].x = circles[animate].r;
+			if (circles[animate].y + circles[animate].r > canvas.height)
+				circles[animate].y = circles[animate].r;
+			drawAll();
+			setTimeout(() => {
+				main();
+			}, spf);
+		}
+	</script>
+</html>

@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="es">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Document</title>
+		<style>
+			body {
+				margin: 0px;
+				padding: 0px;
+			}
+		</style>
+	</head>
+	<body></body>
+	<script>
+		var angle = 0;
+		var line = {
+			d: true,
+			v: 1,
+		};
+		class ALHUBOEngine {
+			constructor({
+				container = "body", //QuerySelector del contenedor
+				canvas = "ALHUBOEngine_canvas", //id del canvas
+				fps = 60, //frames por segundo de refresco
+				bgc_1 = "#69a100", //color esquina inferior izquierda para degradado
+				bgc_2 = "#1c2b00", //color esquina superior derecha para degradado
+				grid = true, //muestra grid
+				width = 1, //si es mayor que 1 es pixeles | si esta entre 1 y 0 es porcentaje de pantalla
+				height = 1,
+			}) {
+				this.canvas = canvas; //id canvas [Cuando esta detenido] | canvas [Cuando esta corriendo]
+				this.properties = {
+					//propiedades del engine
+					fps: fps, //frames por segundo actual
+					width: width,
+					height: height,
+					background: {
+						//fondo del canvas
+						color: {
+							//colores para el degradado
+							lvl0: bgc_1, //color esquina inferior izquierda para degradado
+							lvl1: bgc_2, //color esquina superior derecha para degradado
+						},
+						grid: grid, //muestra grid?
+					},
+					ctrl: {
+						//propiedades de control
+						fps: 1000 / fps, //fps convertido a milisegundos
+						container: container, //query delector del contenedor del engine
+					},
+				};
+				this.data = {
+					//conetenido del canvas
+					shapes: {
+						//formas simples
+						circles: {},
+						rectangles: {},
+					},
+					nodes: {},
+					connections: {},
+				};
+				this.ctrl = {
+					//variables de control
+					drag: -1, //esta arrastrando algo
+					hilo: null, //hilo del engine
+					ctx: null, //contexto 2d del canvas
+					selected: { k: "none", id: -1 }, //
+					mouse: {
+						//ultimo click
+						x: 0,
+						y: 0,
+					},
+				};
+
+				const self = this;
+				window.addEventListener("resize", function () {
+					self.resize();
+				});
+			}
+			main() {
+				const self = this;
+				self.drawAll();
+				if (angle > Math.PI * 2) angle = 0;
+				else angle += Math.PI / 180;
+
+				if (line.d) {
+					if (line.v < 44) line.v += 1;
+					else line.v = 0;
+				}
+			}
+
+			start() {
+				const self = this;
+				//no tiene que haber un hilo o el canvas creado
+				if (
+					self.ctrl.hilo === null &&
+					typeof self.canvas == "string" &&
+					!document.querySelector(`#${self.canvas}`)
+				) {
+					//crea el canvas
+					const cnvs = document.createElement("canvas");
+					cnvs.id = self.canvas;
+					cnvs.width = "800";
+					cnvs.height = "800";
+					self.canvas = cnvs;
+					document
+						.querySelector(self.properties.ctrl.container)
+						.appendChild(cnvs);
+					self.ctrl.ctx = self.canvas.getContext("2d");
+					self.ctrl.ctx.globalCompositeOperation = "source-over";
+
+					//lo redimensiona
+					self.resize();
+
+					//eventos del mouse en el canvas
+					self.canvas.addEventListener("mousedown", function (e) {
+						var mouse = {
+							x: e.clientX - self.canvas.offsetLeft,
+							y: e.clientY - self.canvas.offsetTop,
+						};
+
+						let shape = self.clickShapes(mouse);
+
+						if (shape.data.draggable) self.ctrl.drag = shape;
+
+						if (typeof self.ctrl.drag == "object") {
+							self.ctrl.selected.k = self.ctrl.drag.k;
+							self.ctrl.selected.id = self.ctrl.drag.id;
+						} else {
+							self.ctrl.selected.k = "none";
+							self.ctrl.selected.id = -1;
+						}
+						// if (
+						// 	typeof self.ctrl.drag == "object" &&
+						// 	self.ctrl.drag.k == "circle"
+						// ) {
+						// 	self.ctrl.mouse.x =
+						// 		self.data.shapes.circles[self.ctrl.drag.id].x;
+						// 	self.ctrl.mouse.y =
+						// 		self.data.shapes.circles[self.ctrl.drag.id].y;
+						// } else if (self.ctrl.drag.k == "circle") {
+						// 	self.ctrl.mouse.x = mouse.x;
+						// 	self.ctrl.mouse.y = mouse.y;
+						// }
+					});
+
+					self.canvas.addEventListener("mousemove", function (e) {
+						var mouse = {
+							x: e.clientX - self.canvas.offsetLeft,
+							y: e.clientY - self.canvas.offsetTop,
+						};
+						self.isClickeable(mouse);
+						self.moveShape(mouse, self.ctrl.drag);
+					});
+
+					self.canvas.addEventListener("mouseup", function () {
+						if (typeof self.ctrl.drag == "object") {
+							self.ctrl.drag = false;
+
+							if (self.ctrl.drag.k == "circle") {
+								let circle =
+									self.data.shapes.circles[self.ctrl.drag.id];
+								circle.x = self.ctrl.mouse.x;
+								circle.y = self.ctrl.mouse.y;
+							}
+						}
+					});
+
+					//inicia hilo de refresco
+					self.ctrl.hilo = setInterval(() => {
+						self.main();
+					}, self.properties.ctrl.fps);
+					console.log("Se inicio correctamente ALHUBOEngine.");
+				} else console.log("ALHUBOEngine ya esta corriendo.");
+			}
+
+			stop() {
+				const self = this;
+				if (typeof self.canvas != "string" && self.canvas) {
+					if (self.ctrl.hilo !== null) {
+						clearInterval(self.ctrl.hilo);
+						self.ctrl.hilo = null;
+					}
+					let id = self.canvas.id;
+					self.canvas.remove();
+					self.canvas = id;
+					console.log("Se detuvo correctamente ALHUBOEngine.");
+				} else console.log("ALHUBOEngine no esta corriendo.");
+			}
+
+			restart() {
+				const self = this;
+				self.stop();
+				self.start();
+			}
+			setfps(fps) {
+				const self = this;
+				self.properties.fps = fps;
+				self.properties.ctrl.fps = 1000 / self.properties.fps;
+				if (self.ctrl.hilo !== null) {
+					clearInterval(self.ctrl.hilo);
+					self.ctrl.hilo = setInterval(() => {
+						self.main();
+					}, self.properties.ctrl.fps);
+				}
+			}
+
+			resize() {
+				const self = this;
+				if (typeof self.canvas != "string") {
+					let w = 0,
+						h = 0;
+					if (self.properties.width <= 1 && self.properties.width > 0)
+						w =
+							document.documentElement.clientWidth *
+							self.properties.width;
+					else if (self.properties.width > 1)
+						w = self.properties.width;
+
+					if (
+						self.properties.height <= 1 &&
+						self.properties.height > 0
+					)
+						h =
+							document.documentElement.clientHeight *
+							self.properties.height;
+					else if (self.properties.height > 1)
+						h = self.properties.height;
+
+					self.canvas.width = w;
+					self.canvas.height = h;
+					self.main();
+				} else console.log("El motor no esta corriendo");
+			}
+
+			//-------------------------------[ Control ]-------------------------------------
+			distance(p1, p2) {
+				if (typeof p1 != "object" || typeof p2 != "object") return -1;
+				if (
+					typeof p1.x == "undefined" ||
+					typeof p1.y == "undefined" ||
+					typeof p2.x == "undefined" ||
+					typeof p2.y == "undefined"
+				)
+					return -1;
+				return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+			}
+
+			pointsInConection(p1, p2) {
+				const self = this;
+				const points = {};
+				// Define los puntos de inicio y fin de la curva
+				let start_x = p1.x,
+					start_y = p1.y,
+					end_x = p2.x,
+					end_y = p2.y,
+					// Definir puntos de control para crear la curva de Bezier
+					distance = self.distance(p1, p2),
+					abs = Math.abs(p1.y - p2.y);
+				if (distance > 80 && abs > 25) {
+					//crea la curva Bezier
+					let control_x1,
+						control_y1 = p1.y,
+						control_x2,
+						control_y2 = p2.y;
+					if (p1.x < p2.x) {
+						control_x1 = p1.x + 100;
+						control_x2 = p2.x - 100;
+					} else {
+						control_x1 = p1.x - 100;
+						control_x2 = p2.x + 100;
+					}
+					// Número de segmentos para la curva
+					let num_segments = 32,
+						// Define el ancho de la línea
+						// Dibuja la curva de Bezier utilizando primitivas
+						_x = p1.x,
+						_y = p1.y;
+					for (let i = 0; i <= num_segments; i++) {
+						let t = i / num_segments;
+						let inv_t = 1 - t;
+						_x =
+							start_x * inv_t * inv_t * inv_t +
+							3 * control_x1 * t * inv_t * inv_t +
+							3 * control_x2 * t * t * inv_t +
+							end_x * t * t * t;
+						_y =
+							start_y * inv_t * inv_t * inv_t +
+							3 * control_y1 * t * inv_t * inv_t +
+							3 * control_y2 * t * t * inv_t +
+							end_y * t * t * t;
+						points[Object.keys(points).length] = { x: _x, y: _y };
+					}
+				} else {
+					points[Object.keys(points).length] = {
+						x: start_x,
+						y: start_y,
+					};
+					points[Object.keys(points).length] = { x: end_x, y: end_y };
+				}
+				return points;
+			}
+
+			addChild(father, child, offset) {
+				const self = this;
+				if (father.k == "circle") {
+					if (self.data.shapes.circles[father.id]) {
+						let n = Object.keys(
+							self.data.shapes.circles[father.id].control
+								.childrens
+						).length;
+						self.data.shapes.circles[father.id].control.childrens[
+							n
+						] = child;
+						self.data.shapes.circles[father.id].control.childrens[
+							n
+						].offset = offset;
+						self.rebuildChildren(
+							self.data.shapes.circles[father.id]
+						);
+					}
+				}
+			}
+
+			rebuildChildren(father) {
+				const self = this;
+				for (let i in father.control.childrens) {
+					let childD = father.control.childrens[i],
+						child;
+					if (childD.k == "circle") {
+						child = self.data.shapes.circles[childD.id];
+					}
+
+					child.x = father.x + childD.offset.x;
+					child.y = father.y + childD.offset.y;
+					self.rebuildChildren(child);
+				}
+			}
+			//------------------------------[ Crear Formas Simples ]--------------------------------------
+			createCircle({
+				x = 0, //posicion x
+				y = 0, //posicion y
+				radio = 0, //radio
+				background = true,
+				backgroundColor1 = "rgba(0, 0, 0, 0.5)",
+				backgroundColor2 = "rgba(0, 0, 0, 0.1)",
+				backgroundDirection = 3,
+				border = false,
+				borderColor = "#030106",
+				borderStyle = 0,
+				borderWidth = 2,
+				shadow = false, //shadow
+				shadowColor = "rgba(0, 0, 0, 0.5)",
+				shadowOffsetX = 5,
+				shadowOffsetY = 5,
+				shadowBlur = 10,
+				draggable = false, //draggable
+				cursorStyle = "default", //pointer
+				clickable = false,
+				inputable = false,
+				highlightable = false, //highlightable
+				highlight = false,
+				highlightBackground = false,
+				highlightBackgroundColor1 = "rgba(0, 0, 0, 0.7)",
+				highlightBackgroundColor2 = "rgba(0, 0, 0, 0.7)",
+				highlightBackgroundDirection = 3,
+				highlightBorder = true,
+				highlightBorderColor = "#f8a200",
+				highlightBorderStyle = 0,
+				highlightBorderWidth = 2,
+				highlightShadow = true,
+				highlightShadowBlur = 10,
+				highlightShadowColor = "#f8a20047",
+				highlightShadowOffsetX = 5,
+				highlightShadowOffsetY = 5,
+				disabeld = false,
+				disabeldBackground = true,
+				disabeldBackgroundColor1 = "rgba(150, 150, 150, 0.3)",
+				disabeldBackgroundColor2 = "rgba(150, 150, 150, 0.3)",
+				disabeldBackgroundDirection = 3,
+				disabeldBorder = true,
+				disabeldBorderColor = "#cecece",
+				disabeldBorderStyle = 0,
+				disabeldBorderWidth = 2,
+				disabeldShadow = true,
+				disabeldShadowBlur = 10,
+				disabeldShadowColor = "rgba(150, 150, 150, 0.3)",
+				disabeldShadowOffsetX = 5,
+				disabeldShadowOffsetY = 5,
+				connectOffsetX = 0,
+				connectOffsetY = 0,
+			}) {
+				const self = this;
+				let n = Object.keys(self.data.shapes.circles).length;
+				self.data.shapes.circles[n] = {
+					x,
+					y,
+					radio: radio,
+					properties: {
+						background: {
+							active: background,
+							grad1: backgroundColor1,
+							grad2: backgroundColor2,
+							direction: backgroundDirection,
+						},
+						border: {
+							ative: border,
+							color: borderColor,
+							style: borderStyle,
+							width: borderWidth,
+						},
+						shadow: {
+							active: shadow,
+							blur: shadowBlur,
+							color: shadowColor,
+							offset: {
+								x: shadowOffsetX,
+								y: shadowOffsetY,
+							},
+						},
+					},
+					control: {
+						connection: {
+							offset: {
+								x: connectOffsetX,
+								y: connectOffsetY,
+							},
+						},
+						childrens: {},
+						tipo: {
+							draggable: draggable,
+							clickable: clickable,
+							inputable: inputable,
+						},
+
+						highlightable: {
+							enable: highlightable,
+							active: highlight,
+							properties: {
+								background: {
+									active: highlightBackground,
+									grad1: highlightBackgroundColor1,
+									grad2: highlightBackgroundColor2,
+									direction: highlightBackgroundDirection,
+								},
+								border: {
+									ative: highlightBorder,
+									color: highlightBorderColor,
+									style: highlightBorderStyle,
+									width: highlightBorderWidth,
+								},
+								shadow: {
+									active: highlightShadow,
+									blur: highlightShadowBlur,
+									color: highlightShadowColor,
+									offset: {
+										x: highlightShadowOffsetX,
+										y: highlightShadowOffsetY,
+									},
+								},
+							},
+						},
+						disabled: {
+							active: disabeld,
+							properties: {
+								background: {
+									active: disabeldBackground,
+									grad1: disabeldBackgroundColor1,
+									grad2: disabeldBackgroundColor2,
+									direction: disabeldBackgroundDirection,
+								},
+								border: {
+									ative: disabeldBorder,
+									color: disabeldBorderColor,
+									style: disabeldBorderStyle,
+									width: disabeldBorderWidth,
+								},
+								shadow: {
+									active: disabeldShadow,
+									blur: disabeldShadowBlur,
+									color: disabeldShadowColor,
+									offset: {
+										x: disabeldShadowOffsetX,
+										y: disabeldShadowOffsetY,
+									},
+								},
+							},
+						},
+						cursorStyle: cursorStyle,
+					},
+				};
+				return {
+					k: "circle",
+					id: n,
+				};
+			}
+
+			createRectangle({
+				x = 0, //posicion x
+				y = 0, //posicion y
+				w = 0, //ancho
+				a = 0, //alto
+				r = 0, //radio del borde
+				c = "#FFF", //color
+				s = false, //shadow
+				d = false, //draggable
+				h = false, //highlightable
+				p = false, //pointer
+			}) {
+				const self = this;
+				let n = Object.keys(self.data.shapes.rectangles).length;
+
+				if (typeof x != "number") x = 0;
+				if (typeof y != "number") y = 0;
+				if (typeof w != "number") w = 0;
+				if (typeof a != "number") a = 0;
+				if (typeof r != "number" || r < 0 || r > 60) r = 0;
+				if (typeof c != "string") c = "#FFF";
+				if (typeof s != "boolean") s = false;
+				if (typeof d != "boolean") d = false;
+				if (typeof h != "boolean") h = false;
+				self.data.shapes.rectangles[n] = {
+					x,
+					y,
+					w,
+					a,
+					r,
+					c,
+					s,
+					d,
+					h,
+				};
+				return {
+					k: "rectangle",
+					id: n,
+				};
+			}
+
+			//----------------------------------------[ Conection ]------------------------------------------------
+			createConnection(n1, n2) {
+				const self = this;
+				if (typeof n1 != "object" || typeof n2 != "object")
+					return { k: "fail", id: -1 };
+				if (typeof n1.k == "undefined" || typeof n1.id == "undefined")
+					return { k: "fail", id: -1 };
+				if (typeof n2.k == "undefined" || typeof n2.id == "undefined")
+					return { k: "fail", id: -1 };
+				let n = Object.keys(self.data.connections).length;
+				self.data.connections[n] = {
+					n1,
+					n2,
+					highlight: false,
+				};
+				return {
+					k: "conection",
+					id: n,
+				};
+			}
+
+			//---------------------------------[ is Clickeable Forma Simple ]---------------------------------------
+			isClickeableCircle({ mouse = { x: 0, y: 0 }, id = -1 }) {
+				const self = this;
+
+				if (id >= 0) {
+					if (self.data.shapes.circles[id]) {
+						if (
+							self.distance(mouse, {
+								x: self.data.shapes.circles[id].x,
+								y: self.data.shapes.circles[id].y,
+							}) < self.data.shapes.circles[id].radio
+						)
+							return {
+								id: id,
+								draggable:
+									self.data.shapes.circles[id].control.tipo
+										.draggable,
+								disabled:
+									self.data.shapes.circles[id].control
+										.disabled.active,
+								clickable:
+									self.data.shapes.circles[id].control.tipo
+										.clickable,
+								inputable:
+									self.data.shapes.circles[id].control.tipo
+										.inputable,
+								cursorStyle:
+									self.data.shapes.circles[id].control
+										.cursorStyle,
+							};
+					}
+				} else {
+					for (let i in self.data.shapes.circles) {
+						if (
+							self.distance(mouse, {
+								x: self.data.shapes.circles[i].x,
+								y: self.data.shapes.circles[i].y,
+							}) < self.data.shapes.circles[i].radio
+						)
+							return {
+								id: i,
+								draggable:
+									self.data.shapes.circles[i].control.tipo
+										.draggable,
+								disabled:
+									self.data.shapes.circles[i].control.disabled
+										.active,
+								clickable:
+									self.data.shapes.circles[i].control.tipo
+										.clickable,
+								inputable:
+									self.data.shapes.circles[i].control.tipo
+										.inputable,
+								cursorStyle:
+									self.data.shapes.circles[i].control
+										.cursorStyle,
+							};
+					}
+				}
+				return false;
+			}
+
+			isClickeableConnection({ mouse = { x: 0, y: 0 }, id = -1 }) {
+				const self = this;
+				if (id >= 0) {
+					if (self.data.shapes.circles[id]) {
+						if (
+							self.distance(mouse, {
+								x: self.data.shapes.circles[id].x,
+								y: self.data.shapes.circles[id].y,
+							}) < self.data.shapes.circles[id].r
+						)
+							return true;
+					}
+				} else {
+					for (let i in self.data.connections) {
+						let id1 = self.data.connections[i].n1.id;
+						let id2 = self.data.connections[i].n2.id;
+						let pts = self.pointsInConection(
+							{
+								x: self.data.shapes.circles[id1].x,
+								y: self.data.shapes.circles[id1].y,
+							},
+							{
+								x: self.data.shapes.circles[id2].x,
+								y: self.data.shapes.circles[id2].y,
+							}
+						);
+						let distance = -1;
+						let exclude = [
+							"0",
+							"1",
+							`${Object.keys(pts).length - 1}`,
+							`${Object.keys(pts).length - 2}`,
+						];
+						for (let e in pts) {
+							if (!exclude.includes(e)) {
+								if (distance == -1)
+									distance = self.distance(mouse, pts[e]);
+								else {
+									let d = self.distance(mouse, pts[e]);
+									if (d < distance) {
+										distance = d;
+									}
+								}
+							}
+						}
+						if (distance < 16) {
+							self.data.connections[i].highlight = true;
+							return {
+								k: "connection",
+								id: i,
+								draggable: false,
+								disabled: false,
+								clickable: true,
+								inputable: false,
+								cursorStyle: "default",
+							};
+						} else self.data.connections[i].highlight = false;
+					}
+				}
+				return false;
+			}
+
+			isClickeable(mouse) {
+				const self = this;
+				for (let i in self.data.connections) {
+					self.data.connections[i].highlight = false;
+				}
+				let rt = self.isClickeableCircle({ mouse });
+				if (typeof rt == "boolean" && !rt)
+					rt = self.isClickeableConnection({ mouse });
+				if (typeof rt == "boolean" && !rt)
+					self.canvas.style.cursor = "default";
+				else {
+					if (rt.cursorStyle !== "default") {
+						self.canvas.style.cursor = rt.cursorStyle;
+					} else if (rt.disabled) {
+						self.canvas.style.cursor = "no-drop";
+					} else if (rt.draggable) {
+						self.canvas.style.cursor = "grab";
+					} else if (rt.clickable) {
+						self.canvas.style.cursor = "pointer";
+					} else if (rt.inputable) {
+						self.canvas.style.cursor = "text";
+					}
+				}
+
+				return rt;
+			}
+
+			//-------------------------------------[ Click en Formas Simples ]----------------------------------------
+			clickCircle({ mouse = { x: 0, y: 0 }, id = -1 }) {
+				const self = this;
+				if (id >= 0) {
+					if (self.data.shapes.circles[id]) {
+						let data = self.isClickeableCircle({ mouse, id: i });
+						if (data)
+							return {
+								k: "circle",
+								data,
+								x: self.data.shapes.circles[i].x - mouse.x,
+								y: self.data.shapes.circles[i].y - mouse.y,
+							};
+					}
+				} else
+					for (let i in self.data.shapes.circles) {
+						let data = self.isClickeableCircle({ mouse, id: i });
+						if (data) {
+							return {
+								k: "circle",
+								data,
+								x: self.data.shapes.circles[i].x - mouse.x,
+								y: self.data.shapes.circles[i].y - mouse.y,
+							};
+						}
+					}
+				return false;
+			}
+
+			clickConnection({ mouse = { x: 0, y: 0 }, id = -1 }) {
+				const self = this;
+				if (id >= 0) {
+					if (self.data.shapes.circles[id]) {
+						if (
+							self.distance(mouse, {
+								x: self.data.shapes.circles[id].x,
+								y: self.data.shapes.circles[id].y,
+							}) < self.data.shapes.circles[id].r
+						)
+							return true;
+					}
+				} else {
+					for (let i in self.data.connections) {
+						let id1 = self.data.connections[i].n1.id;
+						let id2 = self.data.connections[i].n2.id;
+						let pts = self.pointsInConection(
+							{
+								x: self.data.shapes.circles[id1].x,
+								y: self.data.shapes.circles[id1].y,
+							},
+							{
+								x: self.data.shapes.circles[id2].x,
+								y: self.data.shapes.circles[id2].y,
+							}
+						);
+						let distance = -1;
+						for (let e in pts) {
+							if (distance == -1)
+								distance = self.distance(mouse, pts[e]);
+							else {
+								let d = self.distance(mouse, pts[e]);
+								if (d < distance) {
+									distance = d;
+								}
+							}
+						}
+						if (distance < 12)
+							return {
+								k: "connection",
+								id: i,
+							};
+					}
+				}
+				return false;
+			}
+
+			clickShapes(mouse) {
+				const self = this;
+				let rt = self.clickCircle({ mouse });
+				if (typeof rt == "boolean")
+					rt = self.clickConnection({ mouse });
+				return rt;
+			}
+
+			//--------------------------------------[ Mover Formas Simples ]---------------------------------------
+			moveShape(mouse, shape) {
+				const self = this;
+				if (typeof shape == "object") {
+					if (shape.k == "circle") {
+						self.data.shapes.circles[shape.data.id].x =
+							mouse.x + shape.x;
+						self.data.shapes.circles[shape.data.id].y =
+							mouse.y + shape.y;
+						self.canvas.style.cursor = "grabbing";
+						self.rebuildChildren(
+							self.data.shapes.circles[shape.data.id]
+						);
+					}
+				}
+			}
+
+			//------------------------------[ Dibujar Formas Simples ]--------------------------------------
+			// {
+			// 		x,
+			// 		y,
+			// 		radio: radio,
+			// 		properties: {
+			// 			background: {
+			// 				active: background,
+			// 				grad1: backgroundColor1,
+			// 				grad2: backgroundColor2,
+			// 				direction: backgroundDirection,
+			// 			},
+			// 			border: {
+			// 				ative: border,
+			// 				color: borderColor,
+			// 				style: borderStyle,
+			// 			},
+			// 			shadow: {
+			// 				active: shadow,
+			// 				blur: shadowBlur,
+			// 				color: shadowColor,
+			// 				offset: {
+			// 					x: shadowOffsetX,
+			// 					y: shadowOffsetY,
+			// 				},
+			// 			},
+			// 		},
+			// 		control: {
+			// 			draggable: draggable,
+			// 			highlightable: highlightable,
+			// 			cursorStyle: cursorStyle,
+			// 			clickable: clickable,
+			// 		},
+			// 	}
+
+			drawShadow(shape) {
+				const self = this;
+				if (shape.control.disabled.active) {
+					if (shape.control.disabled.properties.shadow.active) {
+						self.ctrl.ctx.shadowBlur =
+							shape.control.disabled.properties.shadow.blur;
+						self.ctrl.ctx.shadowColor =
+							shape.control.disabled.properties.shadow.color;
+						self.ctrl.ctx.shadowOffsetX =
+							shape.control.disabled.properties.shadow.offset.x;
+						self.ctrl.ctx.shadowOffsetY =
+							shape.control.disabled.properties.shadow.offset.y;
+					}
+				} else if (shape.control.highlightable.active) {
+					if (shape.control.highlightable.properties.shadow.active) {
+						self.ctrl.ctx.shadowBlur =
+							shape.control.highlightable.properties.shadow.blur;
+						self.ctrl.ctx.shadowColor =
+							shape.control.highlightable.properties.shadow.color;
+						self.ctrl.ctx.shadowOffsetX =
+							shape.control.highlightable.properties.shadow.offset.x;
+						self.ctrl.ctx.shadowOffsetY =
+							shape.control.highlightable.properties.shadow.offset.y;
+					}
+				} else if (shape.properties.shadow.active) {
+					self.ctrl.ctx.shadowBlur = shape.properties.shadow.blur;
+					self.ctrl.ctx.shadowColor = shape.properties.shadow.color;
+					self.ctrl.ctx.shadowOffsetX =
+						shape.properties.shadow.offset.x;
+					self.ctrl.ctx.shadowOffsetY =
+						shape.properties.shadow.offset.y;
+				} else {
+					self.ctrl.ctx.shadowBlur = 0;
+					self.ctrl.ctx.shadowColor = "rgba(0, 0, 0, 0)";
+					self.ctrl.ctx.shadowOffsetX = 0;
+					self.ctrl.ctx.shadowOffsetY = 0;
+				}
+			}
+
+			drawBackground(shape, props) {
+				const self = this;
+				let start = {},
+					end = {};
+				let direction = -1;
+				if (
+					shape.control.disabled.active &&
+					shape.control.disabled.properties.background.active
+				)
+					direction =
+						shape.control.disabled.properties.background.direction;
+				else if (
+					shape.control.highlightable.active &&
+					shape.control.highlightable.properties.background.active
+				)
+					direction =
+						shape.control.highlightable.properties.background
+							.direction;
+				else if (shape.properties.background.active)
+					direction = shape.properties.background.direction;
+
+				if (direction >= 0) {
+					if (direction == 0) {
+						start = {
+							x: props.x - props.w,
+							y: props.y,
+						};
+						end = {
+							x: props.x + props.w,
+							y: props.y,
+						};
+					} else if (direction == 1) {
+						start = {
+							x: 0,
+							y: props.y + props.h,
+						};
+						end = {
+							x: props.x + props.w,
+							y: 0,
+						};
+					} else if (direction == 2) {
+						start = {
+							x: props.x,
+							y: props.y + props.h,
+						};
+						end = {
+							x: props.x,
+							y: 0,
+						};
+					} else if (direction == 3) {
+						start = {
+							x: props.x + props.w,
+							y: props.y + props.h,
+						};
+						end = {
+							x: 0,
+							y: 0,
+						};
+					} else if (direction == 4) {
+						start = {
+							x: props.x + props.w,
+							y: props.y,
+						};
+						end = {
+							x: 0,
+							y: props.y,
+						};
+					} else if (direction == 5) {
+						start = {
+							x: props.x + props.w,
+							y: 0,
+						};
+						end = {
+							x: 0,
+							y: props.y + props.h,
+						};
+					} else if (direction == 6) {
+						start = {
+							x: props.x,
+							y: 0,
+						};
+						end = {
+							x: props.x,
+							y: props.y + props.h,
+						};
+					}
+					let gradient = self.ctrl.ctx.createLinearGradient(
+						start.x,
+						start.y,
+						end.x,
+						end.y
+					);
+					if (shape.control.disabled.active) {
+						gradient.addColorStop(
+							0,
+							shape.control.disabled.properties.background.grad1
+						);
+						gradient.addColorStop(
+							1,
+							shape.control.disabled.properties.background.grad2
+						);
+					} else if (shape.control.highlightable.active) {
+						gradient.addColorStop(
+							0,
+							shape.control.highlightable.properties.background
+								.grad1
+						);
+						gradient.addColorStop(
+							1,
+							shape.control.highlightable.properties.background
+								.grad1
+						);
+					} else {
+						gradient.addColorStop(
+							0,
+							shape.properties.background.grad1
+						);
+						gradient.addColorStop(
+							1,
+							shape.properties.background.grad2
+						);
+					}
+					self.ctrl.ctx.fillStyle = gradient;
+					self.ctrl.ctx.fill();
+				}
+			}
+
+			drawBorder(shape) {
+				const self = this;
+				if (self.isHighlight(shape)) self.ctrl.ctx.setLineDash([5, 5]);
+				// Define el patrón de línea punteada (5 píxeles de línea seguida de 5 píxeles de espacio)
+				else self.ctrl.ctx.setLineDash([]);
+				if (shape.control.disabled.active) {
+					self.ctrl.ctx.lineWidth =
+						shape.control.disabled.properties.border.width;
+					self.ctrl.ctx.strokeStyle =
+						shape.control.disabled.properties.border.color;
+				} else if (shape.control.highlightable.active) {
+					self.ctrl.ctx.lineWidth =
+						shape.control.highlightable.properties.border.width;
+					self.ctrl.ctx.strokeStyle =
+						shape.control.highlightable.properties.border.color;
+				} else {
+					self.ctrl.ctx.lineWidth = shape.properties.border.width;
+					self.ctrl.ctx.strokeStyle = shape.properties.border.color;
+				}
+
+				self.ctrl.ctx.stroke();
+			}
+
+			isHighlight(shape) {
+				return (
+					!shape.control.disabled.active &&
+					shape.control.highlightable.active
+				);
+			}
+
+			drawCircle(circle) {
+				const self = this;
+				self.ctrl.ctx.beginPath();
+
+				self.drawShadow(circle);
+
+				let highlight = self.isHighlight(circle);
+
+				if (highlight) {
+					self.ctrl.ctx.translate(circle.x, circle.y);
+					self.ctrl.ctx.rotate(angle);
+					self.ctrl.ctx.translate(-circle.x, -circle.y);
+				}
+
+				self.ctrl.ctx.arc(
+					circle.x,
+					circle.y,
+					circle.radio,
+					0,
+					Math.PI * 2
+				);
+
+				self.drawBackground(circle, {
+					x: circle.x,
+					y: circle.y,
+					w: circle.radio,
+					h: circle.radio,
+				});
+
+				self.drawBorder(circle);
+				if (highlight) {
+					self.ctrl.ctx.setTransform(1, 0, 0, 1, 0, 0);
+				}
+				self.ctrl.ctx.closePath();
+			}
+
+			drawRectangle({
+				x = 0, //posicion x
+				y = 0, //posicion y
+				w = 0, //ancho
+				a = 0, //alto
+				r = 0, //radio del borde
+				c = "#FFF", //color
+				s = false, //shadow
+			}) {
+				if (s) {
+					self.ctrl.ctx.shadowBlur = 10; // Radio del desenfoque de la sombra
+					self.ctrl.ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; // Color de la sombra (en este caso, semitransparente negro)
+					self.ctrl.ctx.shadowOffsetX = 5; // Desplazamiento horizontal de la sombra
+					self.ctrl.ctx.shadowOffsetY = 5;
+				} else {
+					self.ctrl.ctx.shadowBlur = 0; // Radio del desenfoque de la sombra
+					self.ctrl.ctx.shadowColor = "rgba(0, 0, 0, 0)"; // Color de la sombra (en este caso, semitransparente negro)
+					self.ctrl.ctx.shadowOffsetX = 0; // Desplazamiento horizontal de la sombra
+					self.ctrl.ctx.shadowOffsetY = 0;
+				}
+				self.ctrl.ctx.setLineDash([]); // Define el patrón de línea punteada (5 píxeles de línea seguida de 5 píxeles de espacio)
+				self.ctrl.ctx.lineWidth = 4;
+				self.ctrl.ctx.strokeStyle = "#000";
+				self.ctrl.ctx.beginPath();
+				self.ctrl.ctx.moveTo(x + r, y);
+				self.ctrl.ctx.arcTo(x + w, y, x + w, y + h, r);
+				self.ctrl.ctx.arcTo(x + w, y + h, x, y + h, r);
+				self.ctrl.ctx.arcTo(x, y + h, x, y, r);
+				self.ctrl.ctx.arcTo(x, y, x + w, y, r);
+				self.ctrl.ctx.closePath();
+				self.ctrl.ctx.fillStyle = c;
+				self.ctrl.ctx.fill();
+				self.ctrl.ctx.stroke();
+			}
+
+			drawConnection({
+				p1 = { x: 0, y: 0 },
+				p2 = { x: 0, y: 0 },
+				h = false,
+			}) {
+				const self = this;
+				// Define los puntos de inicio y fin de la curva
+				const pts = self.pointsInConection(p1, p2);
+				let color = "#757575";
+				// self.drawCircle({
+				// 	x: pts[0].x,
+				// 	y: pts[0].y,
+				// 	r: 4,
+				// 	c: h ? "#0f0" : color,
+				// });
+				let col = color;
+				if (h) {
+					col = "#0F0";
+				}
+
+				self.ctrl.ctx.beginPath();
+				self.ctrl.ctx.fillStyle = col;
+				self.ctrl.ctx.arc(pts[0].x, pts[0].y, 4, 0, Math.PI * 2);
+				self.ctrl.ctx.fill();
+				self.ctrl.ctx.closePath();
+
+				self.ctrl.ctx.beginPath();
+				self.ctrl.ctx.fillStyle = col;
+				self.ctrl.ctx.arc(
+					pts[Object.keys(pts).length - 1].x,
+					pts[Object.keys(pts).length - 1].y,
+					4,
+					0,
+					Math.PI * 2
+				);
+				self.ctrl.ctx.fill();
+				self.ctrl.ctx.closePath();
+
+				self.ctrl.ctx.beginPath();
+				self.ctrl.ctx.moveTo(pts[0].x, pts[0].y);
+				self.ctrl.ctx.lineWidth = 4;
+				self.ctrl.ctx.shadowBlur = 10; // Radio del desenfoque de la sombra
+				self.ctrl.ctx.shadowColor = "rgba(0, 0, 0, 0.5)"; // Color de la sombra (en este caso, semitransparente negro)
+				self.ctrl.ctx.shadowOffsetX = 4; // Desplazamiento horizontal de la sombra
+				self.ctrl.ctx.shadowOffsetY = 4;
+				if (h) {
+					self.ctrl.ctx.strokeStyle = "#0f0";
+					self.ctrl.ctx.shadowColor = "rgba(0, 255, 0, 1)";
+					self.ctrl.ctx.setLineDash([12, 5, 5]);
+					self.ctrl.ctx.lineDashOffset = -line.v;
+				} else {
+					self.ctrl.ctx.strokeStyle = color;
+					self.ctrl.ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+					self.ctrl.ctx.setLineDash([]);
+				}
+				for (let i in pts) {
+					self.ctrl.ctx.lineTo(pts[i].x, pts[i].y);
+				}
+				self.ctrl.ctx.stroke(); // Dibujar las lineas
+				self.ctrl.ctx.closePath();
+				// self.drawCircle({
+				// 	x: pts[Object.keys(pts).length - 1].x,
+				// 	y: pts[Object.keys(pts).length - 1].y,
+				// 	r: 4,
+				// 	c: h ? "#0f0" : color,
+				// });
+			}
+
+			// drawBackGround() {
+			// 	const self = this;
+			// 	var gradient = self.ctrl.ctx.createLinearGradient(
+			// 		0,
+			// 		self.canvas.width,
+			// 		self.canvas.height,
+			// 		0
+			// 	);
+			// 	gradient.addColorStop(0, self.properties.background.color.lvl0); // Color inicial (en la esquina superior izquierda)
+			// 	gradient.addColorStop(1, self.properties.background.color.lvl1);
+			// 	self.ctrl.ctx.fillStyle = gradient;
+			// 	self.ctrl.ctx.fillRect(
+			// 		0,
+			// 		0,
+			// 		self.canvas.width,
+			// 		self.canvas.height
+			// 	);
+			// }
+
+			drawGrid() {
+				const self = this;
+				if (self.properties.background.grid) {
+					self.ctrl.ctx.shadowBlur = 0; // Radio del desenfoque de la sombra
+					self.ctrl.ctx.shadowColor = "rgba(0, 0, 0, 0)"; // Color de la sombra (en este caso, semitransparente negro)
+					self.ctrl.ctx.shadowOffsetX = 0; // Desplazamiento horizontal de la sombra
+					self.ctrl.ctx.shadowOffsetY = 0;
+					self.ctrl.ctx.lineWidth = 1;
+					self.ctrl.ctx.strokeStyle = "#efefef";
+					self.ctrl.ctx.setLineDash([]);
+					for (let i = 0; i < self.canvas.width; i += 32) {
+						self.ctrl.ctx.beginPath();
+						self.ctrl.ctx.moveTo(i, 0);
+						self.ctrl.ctx.lineTo(i, self.canvas.height);
+						self.ctrl.ctx.stroke(); // Dibujar los puntos
+						self.ctrl.ctx.closePath();
+					}
+
+					for (let i = 0; i < self.canvas.width; i += 32) {
+						self.ctrl.ctx.beginPath();
+						self.ctrl.ctx.moveTo(0, i);
+						self.ctrl.ctx.lineTo(self.canvas.width, i);
+						self.ctrl.ctx.stroke(); // Dibujar los puntos
+						self.ctrl.ctx.closePath();
+					}
+				}
+			}
+
+			drawAll() {
+				const self = this;
+				self.ctrl.ctx.clearRect(
+					0,
+					0,
+					self.canvas.width,
+					self.canvas.height
+				);
+
+				// self.drawBackGround();
+
+				self.drawGrid();
+
+				for (let i in self.data.shapes.circles) {
+					self.drawCircle(self.data.shapes.circles[i]);
+				}
+
+				for (let i in self.data.connections) {
+					let id1 = self.data.connections[i].n1.id;
+					let id2 = self.data.connections[i].n2.id;
+					self.drawConnection({
+						p1: {
+							x:
+								self.data.shapes.circles[id1].x +
+								self.data.shapes.circles[id1].control.connection
+									.offset.x,
+							y:
+								self.data.shapes.circles[id1].y +
+								self.data.shapes.circles[id1].control.connection
+									.offset.y,
+						},
+						p2: {
+							x:
+								self.data.shapes.circles[id2].x +
+								self.data.shapes.circles[id2].control.connection
+									.offset.x,
+							y:
+								self.data.shapes.circles[id2].y +
+								self.data.shapes.circles[id2].control.connection
+									.offset.y,
+						},
+						h: self.data.connections[i].highlight,
+					});
+				}
+			}
+		}
+
+		var AHBE = new ALHUBOEngine({
+			bgc_1: "#fff",
+			bgc_2: "#fff",
+			grid: true,
+		});
+
+		document.addEventListener("DOMContentLoaded", () => {
+			let cpadre = AHBE.createCircle({
+				x: 200,
+				y: 200,
+				radio: 30,
+				shadow: true,
+				border: true,
+				// highlight: true,
+				draggable: true,
+				connectOffsetX: 0,
+			});
+
+			let c1 = AHBE.createCircle({
+				x: 200,
+				y: 200,
+				radio: 10,
+				shadow: true,
+				border: true,
+				// highlight: true,
+				draggable: false,
+				connectOffsetX: 0,
+			});
+
+			let c2 = AHBE.createCircle({
+				x: 600,
+				y: 400,
+				radio: 10,
+				shadow: true,
+				border: true,
+				// highlight: true,
+				draggable: false,
+			});
+			let r1 = AHBE.createRectangle({
+				x: 10,
+				y: 10,
+				w: 100,
+				a: 100,
+				r: 10,
+			});
+
+			AHBE.addChild(cpadre, c1, { x: 25, y: 0 });
+			// AHBE.createConnection(c1, c2);
+			AHBE.start();
+		});
+
+		function animabolita() {
+			circles[animate].x += 2;
+			circles[animate].y += 2;
+			if (circles[animate].x + circles[animate].r > canvas.width)
+				circles[animate].x = circles[animate].r;
+			if (circles[animate].y + circles[animate].r > canvas.height)
+				circles[animate].y = circles[animate].r;
+		}
+	</script>
+</html>
